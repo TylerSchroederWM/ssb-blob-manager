@@ -159,7 +159,7 @@ function exit() {
 }
 
 function debug(message) {
-	if(DEBUG) {
+	if(argv.v || DEBUG) {
 		var timestamp = new Date();
 		console.log("[channels-lib] [" + timestamp.toISOString() + "] " +  message);
 	}
@@ -263,8 +263,8 @@ function main(channelName, hops=MAX_HOPS) {
 
 function getConfig() {
 	return {
-		host: config.connections.incoming.net.external || "localhost",
-		port: config.connections.incoming.net.port || 8008
+		host: config.host || "localhost",
+		port: config.port || 8008
 	}
 }
 
