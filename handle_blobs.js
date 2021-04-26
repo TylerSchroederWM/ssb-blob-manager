@@ -140,9 +140,8 @@ function deleteUnrelatedBlobs() {
 			return !allowedBlobs.includes(id);
 		}),
 		pull.drain(function(id) {
-			client.blobs.rm(id, function () {
-				debug("Removed blob with ID " + id);
-			});
+			debug("Removing blob with ID " + id);
+			client.blobs.rm(id, () => {}); // if you are having terrible race condition bugs where blob delete messages are printed but blbos are not deleted, this is why, and god help you
 		}, function() {
 			process.exit(0);
 		})
