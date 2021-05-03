@@ -17,7 +17,7 @@ MAX_HOPS = 1
 // using global variables to this degree is horrific, but nodejs has forced my hand
 var client;
 var allowedBlobs = [];
-var idsInMainChannel = {};
+var idsInMainChannels = {};
 
 function getBlob(blobId, reportStream=null) { 
 	allowedBlobs.push(blobId);
@@ -80,7 +80,7 @@ function downloadAllBlobsWithoutDoomedRaceConditionsSeeHowEasyThisIsScuttlebuttP
 }
 
 function getRelevantProfilePictures() {
-	let relevantIds = Object.keys(idsInMainChannel);
+	let relevantIds = Object.keys(idsInMainChannels);
 	let profilePictureStreams = []
 	let profilePictureFound = {};
 	for(let userId of relevantIds) {
@@ -141,7 +141,7 @@ function deleteUnrelatedBlobs() {
 		}),
 		pull.drain(function(id) {
 			debug("Removing blob with ID " + id);
-			client.blobs.rm(id, () => {}); // if you are having terrible race condition bugs where blob delete messages are printed but blbos are not deleted, this is why, and god help you
+			client.blobs.rm(id, () => {}); // if you are having terrible race condition bugs where blob delete messages are printed but blobs are not deleted, this is why, and god help you
 		}, function() {
 			process.exit(0);
 		})
@@ -219,7 +219,7 @@ function createMetadataStream(client, userId) {
 	return query;
 }
 
-function getBlobsFromChannel(channelName, followedIds) {
+function getBlobsFromChannel(channelName, followedIds, channelDoneReporter) {
 	var channelTag = "#" + channelName;
 	var hashtagStream = createHashtagStream(client, channelName);
 	var channelStream = createChannelStream(client, channelName);
@@ -239,15 +239,36 @@ function getBlobsFromChannel(channelName, followedIds) {
 			}
 		}), 
 		pull.drain(function(msg) {
-			idsInMainChannel[msg.data.value.author] = true;
+			idsInMainChannels[msg.data.value.author] = true;
 			requestBlobsFromMsg(msg.data);
 		}, function() {
-			getRelevantProfilePictures();
+			channelDoneReporter.push(channelName)
 		})
 	);
 }
 
-function main(channelName, hops=MAX_HOPS) {
+function getBlobsFromChannels(channelNames, followedIds) {
+	var nChannelsLeft = typeof(channelNames) == "string" ? 1 : channelNames.length;
+	var channelDoneReporter = Pushable();
+
+	for(var channelName of channelNames) {
+		debug("Starting blob requests for channel " + channelName);
+		getBlobsFromChannel(channelName, followedIds, channelDoneReporter);
+	}
+	
+	pull(
+		channelDoneReporter,
+		pull.drain(function(channelName) {
+			debug("Finished requesting blobs from channel " + channelName);
+			if(--nChannelsLeft == 0) {
+				getRelevantProfilePictures();
+				channelDoneReporter.end();
+			}
+		})
+	)
+}
+
+function main(channelNames, hops=MAX_HOPS) {
 	client.friends.hops({
 		dunbar: Number.MAX_SAFE_INTEGER,
 		max: hops
@@ -257,7 +278,7 @@ function main(channelName, hops=MAX_HOPS) {
 		}
 
 		var followedIds = Object.keys(friends).map(id => id.toLowerCase());
-		getBlobsFromChannel(channelName, followedIds);
+		getBlobsFromChannels(channelNames, followedIds);
 	});
 }
 
@@ -277,5 +298,5 @@ clientFactory(getConfig(), function(err, newClient) {
 	if(argv["delete"] || argv["del"]) {
 		argv.d = true;
 	}
-	main(argv._[0] || DEFAULT_CHANNEL_NAME);
+	main(argv._.length ? argv._ : [DEFAULT_CHANNEL_NAME]);
 });
